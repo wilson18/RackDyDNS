@@ -8,9 +8,9 @@ import socket
 from requests import get
 
 pyrax.set_setting("identity_type", "rackspace")
-
+DIR_NAME = os.path.dirname(os.path.realpath(__file__)) + "/"
 # Config file path
-CONFIG_FILE = "config.json"
+CONFIG_FILE = DIR_NAME + "config.json"
 
 # API Global Settings read from config file
 ACCOUNT_NUMBER = ""
