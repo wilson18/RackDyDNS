@@ -125,7 +125,7 @@ def parse_config():
         DOMAIN = loaded_json['Domain']
         subdomain_option = loaded_json['SubDomain']
         if subdomain_option == "auto":
-            SUBDOMAIN = get_hostname()
+            SUBDOMAIN = get_hostname().replace("." + DOMAIN, "")
         else:
             SUBDOMAIN = subdomain_option
     else:
