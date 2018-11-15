@@ -7,45 +7,37 @@ import socket
 
 from requests import get
 
-pyrax.set_setting("identity_type", "rackspace")
-DIR_NAME = os.path.dirname(os.path.realpath(__file__)) + "/"
-# Config file path
-CONFIG_FILE = DIR_NAME + "config.json"
-
-# API Global Settings read from config file
-ACCOUNT_NUMBER = ""
-API_KEY = ""
-DOMAIN = ""
-SUBDOMAIN = ""
-DNS = None
-
 # Exit Codes
 EXIT_SUCCESS = 0
 EXIT_ERROR = 1
 EXIT_ERROR_INVALID_CONFIG = 2
 
-
 def main():
-    global DOMAIN, DNS
-    parse_config()
-    ip_addr = get_ipv4()
+    working_directory = os.path.dirname(os.path.realpath(__file__)) + "/"
 
-    setup_api()
-    DNS = pyrax.cloud_dns
+    # Config file path
+    config_file = working_directory + "config.json"
 
-    record = get_record()
+    api_key, domain, hostname, username = parse_config(config_file)
+    fqdn = hostname + "." + domain
+    ip_addr = get_ipaddr()
+
+    setup_api(api_key, username)
+    dns_handle = pyrax.cloud_dns
+
+    record = get_record(dns_handle, fqdn, domain)
     if record is not None:
         update_record_ip(record, ip_addr)
     else:
         print("Creating record")
-        create_record(ip_addr)
+        create_record(dns_handle, domain, fqdn, ip_addr)
 
-def get_record():
-    global DOMAIN, DNS, SUBDOMAIN
-    fqdn = SUBDOMAIN + "." + DOMAIN
+    exit(EXIT_SUCCESS)
+
+def get_record(dns_handle, fqdn, domain):
     record = None
     print("Searching for {fqdn}".format(fqdn=fqdn))
-    all_records = DNS.list_records(DOMAIN)
+    all_records = dns_handle.list_records(domain)
     for this_record in all_records:
         if this_record.name.lower() == fqdn.lower():
             record = this_record
@@ -53,17 +45,15 @@ def get_record():
 
     return record
 
-def create_record(ip_addr):
-    global DOMAIN, DNS, SUBDOMAIN
-    fqdn = SUBDOMAIN + "." + DOMAIN
+def create_record(dns_handle, domain, fqdn, ip_addr):
     record = {
         "type": "A",
         "name": fqdn,
         "data": ip_addr,
         "ttl": 3600,
     }
-    # or
-    DNS.add_records(DOMAIN, record)
+
+    dns_handle.add_records(domain, record)
     print("Record created for {subdomain} => {ip}".format(subdomain=fqdn, ip=ip_addr))
 
 
@@ -77,7 +67,7 @@ def update_record_ip(record, ip):
     return
 
 
-def get_ipv4():
+def get_ipaddr():
     return get('https://api.ipify.org').text
 
 
@@ -99,19 +89,23 @@ def validate_text(text):
     return text != "" and text != None
 
 
-def parse_config():
-    global ACCOUNT_NUMBER, API_KEY, DOMAIN, SUBDOMAIN
-    if not os.path.exists(CONFIG_FILE):
-        print("Unable to read file {config_file}".format(config_file=CONFIG_FILE))
+def parse_config(config_file):
+    api_key = ""
+    domain = ""
+    hostname = ""
+    username = ""
+
+    if not os.path.exists(config_file):
+        print("Unable to read file {config_file}".format(config_file=config_file))
         exit(EXIT_ERROR_INVALID_CONFIG)
 
-    json_text = get_file_contents(CONFIG_FILE)
+    json_text = get_file_contents(config_file)
     loaded_json = {}
     try:
         loaded_json = json.loads(json_text)
     except ValueError:
         print("Unable to decode {config_file}. Please ensure this is formatted correctly."
-              .format(config_file=CONFIG_FILE))
+              .format(config_file=config_file))
         exit(EXIT_ERROR_INVALID_CONFIG)
 
     valid_config =  validate_text(loaded_json['AccountNumber']) \
@@ -120,30 +114,33 @@ def parse_config():
                     and validate_text(loaded_json['SubDomain'])
 
     if valid_config:
-        ACCOUNT_NUMBER = loaded_json['AccountNumber']
-        API_KEY = loaded_json['APIKey']
-        DOMAIN = loaded_json['Domain']
+        username = loaded_json['AccountNumber']
+        api_key = loaded_json['APIKey']
+        domain = loaded_json['Domain']
         subdomain_option = loaded_json['SubDomain']
         if subdomain_option == "auto":
-            SUBDOMAIN = get_hostname().replace("." + DOMAIN, "")
+            hostname = get_hostname().replace("." + domain, "")
         else:
-            SUBDOMAIN = subdomain_option
+            hostname = subdomain_option
+
     else:
         print("{config_file} is invalid. Please ensure this is formatted correctly."
-              .format(config_file=CONFIG_FILE))
+              .format(config_file=config_file))
         exit(EXIT_ERROR_INVALID_CONFIG)
 
+    return api_key, domain, hostname, username
 
-def setup_api():
-    global ACCOUNT_NUMBER, API_KEY
-    keyring.set_password("pyrax", ACCOUNT_NUMBER, API_KEY)
-    print("Authenticating with {account_number} using API Key".format(account_number=ACCOUNT_NUMBER))
+
+def setup_api(api_key, username):
+    pyrax.set_setting("identity_type", "rackspace")
+    keyring.set_password("pyrax", username, api_key)
+    print("Authenticating with {username} using API Key".format(username=username))
     pyrax.set_setting("identity_type", "rackspace")
     pyrax.set_setting('region', 'LON')
-    pyrax.keyring_auth(ACCOUNT_NUMBER)
-    # Using keychain with username set in configuration file
-    pyrax.keyring_auth(username=ACCOUNT_NUMBER)
+    pyrax.keyring_auth(username)
 
+    # Using keychain with username set in configuration file
+    pyrax.keyring_auth(username=username)
 
 
 if __name__ == "__main__":
